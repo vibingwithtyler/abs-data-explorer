@@ -4,10 +4,16 @@ import { COLORS } from '../utils/constants';
 import { nearestZoneEdge, feetToInches } from '../utils/calculations';
 
 const ZONE_HALF_W = 0.708;
+const VIEW_X_MIN = -1.8;
+const VIEW_X_MAX = 1.8;
+const VIEW_Z_MIN = 0.5;
+const VIEW_Z_MAX = 4.5;
+const VIEW_W = VIEW_X_MAX - VIEW_X_MIN; // 3.6 ft
+const VIEW_H = VIEW_Z_MAX - VIEW_Z_MIN; // 4.0 ft
 
-function toSvg(px, pz, sz) {
-  const x = ((px - (-1.5)) / 3.0) * sz;
-  const y = ((4.2 - pz) / 3.5) * sz;
+function toSvg(px, pz, svgW, svgH) {
+  const x = ((px - VIEW_X_MIN) / VIEW_W) * svgW;
+  const y = ((VIEW_Z_MAX - pz) / VIEW_H) * svgH;
   return { x, y };
 }
 
@@ -36,13 +42,13 @@ export default function PitchDetailModal({ challenge, onClose }) {
   if (!challenge) return null;
 
   const c = challenge;
-  const sz = 280;
+  const svgW = 280;
+  const svgH = Math.round(svgW * (VIEW_H / VIEW_W)); // ~311px, preserving aspect ratio
   const zoneTop = c.zoneTop || 3.4;
   const zoneBot = c.zoneBot || 1.55;
   const edge = nearestZoneEdge(c.px, c.pz, zoneTop, zoneBot);
-  // For pitches outside the zone, nudge so the circle (r=10) doesn't overlap the zone
   const dotR = 10;
-  const ftPerPx = 3.0 / sz; // approximate feet-per-pixel for this SVG
+  const ftPerPx = VIEW_W / svgW;
   const margin = dotR * ftPerPx;
   let drawPx = c.px;
   let drawPz = c.pz;
@@ -52,24 +58,24 @@ export default function PitchDetailModal({ challenge, onClose }) {
     if (drawPz > zoneTop) drawPz = Math.max(drawPz, zoneTop + margin);
     else if (drawPz < zoneBot) drawPz = Math.min(drawPz, zoneBot - margin);
   }
-  const pitchPos = toSvg(drawPx, drawPz, sz);
-  const edgePos = toSvg(edge.edgeX, edge.edgeZ, sz);
-  const ztl = toSvg(-ZONE_HALF_W, zoneTop, sz);
-  const zbr = toSvg(ZONE_HALF_W, zoneBot, sz);
+  const pitchPos = toSvg(drawPx, drawPz, svgW, svgH);
+  const edgePos = toSvg(edge.edgeX, edge.edgeZ, svgW, svgH);
+  const ztl = toSvg(-ZONE_HALF_W, zoneTop, svgW, svgH);
+  const zbr = toSvg(ZONE_HALF_W, zoneBot, svgW, svgH);
   const inches = c.missDistanceInches ?? feetToInches(c.missDistance ?? 0);
 
   const platePoints = [
-    toSvg(-ZONE_HALF_W, 0.6, sz),
-    toSvg(ZONE_HALF_W, 0.6, sz),
-    toSvg(ZONE_HALF_W, 0.45, sz),
-    toSvg(0, 0.3, sz),
-    toSvg(-ZONE_HALF_W, 0.45, sz),
+    toSvg(-ZONE_HALF_W, 0.6, svgW, svgH),
+    toSvg(ZONE_HALF_W, 0.6, svgW, svgH),
+    toSvg(ZONE_HALF_W, 0.45, svgW, svgH),
+    toSvg(0, 0.3, svgW, svgH),
+    toSvg(-ZONE_HALF_W, 0.45, svgW, svgH),
   ].map(p => `${p.x},${p.y}`).join(' ');
 
-  const thirdH1 = toSvg(0, zoneBot + (zoneTop - zoneBot) / 3, sz);
-  const thirdH2 = toSvg(0, zoneBot + (zoneTop - zoneBot) * 2 / 3, sz);
-  const thirdV1X = toSvg(-ZONE_HALF_W / 3, 0, sz).x;
-  const thirdV2X = toSvg(ZONE_HALF_W / 3, 0, sz).x;
+  const thirdH1 = toSvg(0, zoneBot + (zoneTop - zoneBot) / 3, svgW, svgH);
+  const thirdH2 = toSvg(0, zoneBot + (zoneTop - zoneBot) * 2 / 3, svgW, svgH);
+  const thirdV1X = toSvg(-ZONE_HALF_W / 3, 0, svgW, svgH).x;
+  const thirdV2X = toSvg(ZONE_HALF_W / 3, 0, svgW, svgH).x;
 
   return (
     <div
@@ -108,7 +114,7 @@ export default function PitchDetailModal({ challenge, onClose }) {
 
         {/* Left: Strike Zone */}
         <div style={{ flex: '1 1 300px', padding: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width={sz} height={sz} style={{ background: COLORS.bg1, borderRadius: 8 }}>
+          <svg width={svgW} height={svgH} style={{ background: COLORS.bg1, borderRadius: 8 }}>
             <polygon points={platePoints} fill="none" stroke={COLORS.border} strokeWidth={1.5} />
             <rect x={ztl.x} y={ztl.y} width={zbr.x - ztl.x} height={zbr.y - ztl.y}
               fill="none" stroke={COLORS.textMuted} strokeWidth={1.5} strokeDasharray="6 3" />
