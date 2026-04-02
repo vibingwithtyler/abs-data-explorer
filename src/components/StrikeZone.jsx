@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { COLORS } from '../utils/constants';
 
 const ZONE_HALF_W = 0.708;
+const BALL_RADIUS_FT = 1.45 / 12;
 const VIEW_X_MIN = -1.8;
 const VIEW_X_MAX = 1.8;
 const VIEW_Z_MIN = 0.5;
@@ -23,15 +24,18 @@ export default function StrikeZone({ pitches = [], width = 380, height = 430, on
     return { top, bot };
   }, [pitches]);
 
-  const zoneTopLeft = toSvg(-ZONE_HALF_W, avgZone.top, width, height);
-  const zoneBotRight = toSvg(ZONE_HALF_W, avgZone.bot, width, height);
+  const effHalfW = ZONE_HALF_W + BALL_RADIUS_FT;
+  const effTop = avgZone.top + BALL_RADIUS_FT;
+  const effBot = avgZone.bot - BALL_RADIUS_FT;
+  const zoneTopLeft = toSvg(-effHalfW, effTop, width, height);
+  const zoneBotRight = toSvg(effHalfW, effBot, width, height);
   const zoneW = zoneBotRight.x - zoneTopLeft.x;
   const zoneH = zoneBotRight.y - zoneTopLeft.y;
 
-  const third1 = toSvg(0, avgZone.bot + (avgZone.top - avgZone.bot) * 2 / 3, width, height);
-  const third2 = toSvg(0, avgZone.bot + (avgZone.top - avgZone.bot) / 3, width, height);
-  const thirdV = toSvg(-ZONE_HALF_W / 3, 0, width, height);
-  const thirdV2 = toSvg(ZONE_HALF_W / 3, 0, width, height);
+  const third1 = toSvg(0, effBot + (effTop - effBot) * 2 / 3, width, height);
+  const third2 = toSvg(0, effBot + (effTop - effBot) / 3, width, height);
+  const thirdV = toSvg(-effHalfW / 3, 0, width, height);
+  const thirdV2 = toSvg(effHalfW / 3, 0, width, height);
   const centerX = toSvg(0, 0, width, height).x;
 
   // Home plate polygon (catcher's view)
@@ -79,10 +83,10 @@ export default function StrikeZone({ pitches = [], width = 380, height = 430, on
         let drawPz = p.pz;
         if (!p.inZone) {
           const margin = r / ((width) / (VIEW_X_MAX - VIEW_X_MIN)); // radius in feet
-          if (drawPx > ZONE_HALF_W) drawPx = Math.max(drawPx, ZONE_HALF_W + margin);
-          else if (drawPx < -ZONE_HALF_W) drawPx = Math.min(drawPx, -ZONE_HALF_W - margin);
-          if (drawPz > avgZone.top) drawPz = Math.max(drawPz, avgZone.top + margin);
-          else if (drawPz < avgZone.bot) drawPz = Math.min(drawPz, avgZone.bot - margin);
+          if (drawPx > effHalfW) drawPx = Math.max(drawPx, effHalfW + margin);
+          else if (drawPx < -effHalfW) drawPx = Math.min(drawPx, -effHalfW - margin);
+          if (drawPz > effTop) drawPz = Math.max(drawPz, effTop + margin);
+          else if (drawPz < effBot) drawPz = Math.min(drawPz, effBot - margin);
         }
         const pos = toSvg(drawPx, drawPz, width, height);
         return (

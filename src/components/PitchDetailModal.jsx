@@ -4,6 +4,7 @@ import { COLORS } from '../utils/constants';
 import { nearestZoneEdge, feetToInches } from '../utils/calculations';
 
 const ZONE_HALF_W = 0.708;
+const BALL_RADIUS_FT = 1.45 / 12; // baseball radius in feet
 const VIEW_X_MIN = -1.8;
 const VIEW_X_MAX = 1.8;
 const VIEW_Z_MIN = 0.5;
@@ -50,32 +51,36 @@ export default function PitchDetailModal({ challenge, onClose }) {
   const dotR = 10;
   const ftPerPx = VIEW_W / svgW;
   const margin = dotR * ftPerPx;
+  // Effective zone boundaries (ball-radius-adjusted, matching ABS in-zone logic)
+  const effHalfW = ZONE_HALF_W + BALL_RADIUS_FT;
+  const effTop = zoneTop + BALL_RADIUS_FT;
+  const effBot = zoneBot - BALL_RADIUS_FT;
   let drawPx = c.px;
   let drawPz = c.pz;
   if (!c.inZone) {
-    if (drawPx > ZONE_HALF_W) drawPx = Math.max(drawPx, ZONE_HALF_W + margin);
-    else if (drawPx < -ZONE_HALF_W) drawPx = Math.min(drawPx, -ZONE_HALF_W - margin);
-    if (drawPz > zoneTop) drawPz = Math.max(drawPz, zoneTop + margin);
-    else if (drawPz < zoneBot) drawPz = Math.min(drawPz, zoneBot - margin);
+    if (drawPx > effHalfW) drawPx = Math.max(drawPx, effHalfW + margin);
+    else if (drawPx < -effHalfW) drawPx = Math.min(drawPx, -effHalfW - margin);
+    if (drawPz > effTop) drawPz = Math.max(drawPz, effTop + margin);
+    else if (drawPz < effBot) drawPz = Math.min(drawPz, effBot - margin);
   }
   const pitchPos = toSvg(drawPx, drawPz, svgW, svgH);
   const edgePos = toSvg(edge.edgeX, edge.edgeZ, svgW, svgH);
-  const ztl = toSvg(-ZONE_HALF_W, zoneTop, svgW, svgH);
-  const zbr = toSvg(ZONE_HALF_W, zoneBot, svgW, svgH);
+  const ztl = toSvg(-effHalfW, effTop, svgW, svgH);
+  const zbr = toSvg(effHalfW, effBot, svgW, svgH);
   const inches = c.missDistanceInches ?? feetToInches(c.missDistance ?? 0);
 
   const platePoints = [
-    toSvg(-ZONE_HALF_W, 0.6, svgW, svgH),
-    toSvg(ZONE_HALF_W, 0.6, svgW, svgH),
-    toSvg(ZONE_HALF_W, 0.45, svgW, svgH),
-    toSvg(0, 0.3, svgW, svgH),
-    toSvg(-ZONE_HALF_W, 0.45, svgW, svgH),
+    toSvg(-ZONE_HALF_W, 0.3, svgW, svgH),
+    toSvg(ZONE_HALF_W, 0.3, svgW, svgH),
+    toSvg(ZONE_HALF_W, 0.15, svgW, svgH),
+    toSvg(0, 0.0, svgW, svgH),
+    toSvg(-ZONE_HALF_W, 0.15, svgW, svgH),
   ].map(p => `${p.x},${p.y}`).join(' ');
 
-  const thirdH1 = toSvg(0, zoneBot + (zoneTop - zoneBot) / 3, svgW, svgH);
-  const thirdH2 = toSvg(0, zoneBot + (zoneTop - zoneBot) * 2 / 3, svgW, svgH);
-  const thirdV1X = toSvg(-ZONE_HALF_W / 3, 0, svgW, svgH).x;
-  const thirdV2X = toSvg(ZONE_HALF_W / 3, 0, svgW, svgH).x;
+  const thirdH1 = toSvg(0, effBot + (effTop - effBot) / 3, svgW, svgH);
+  const thirdH2 = toSvg(0, effBot + (effTop - effBot) * 2 / 3, svgW, svgH);
+  const thirdV1X = toSvg(-effHalfW / 3, 0, svgW, svgH).x;
+  const thirdV2X = toSvg(effHalfW / 3, 0, svgW, svgH).x;
 
   return (
     <div
