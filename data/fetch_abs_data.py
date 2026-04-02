@@ -129,12 +129,11 @@ def extract_challenges_from_game(game_pk, game_data, umpire_name):
         if not review:
             continue
 
-        # Get the description to confirm it's an ABS/pitch challenge
-        desc = play.get("result", {}).get("description", "")
-        if "challenged (pitch result)" not in desc.lower() and "challenged (ball-strike)" not in desc.lower():
-            # Also check for generic challenge language
-            if "challenge" not in desc.lower():
-                continue
+        # Only include ABS pitch challenges (reviewType "MJ").
+        # Other types (MA=tag, MB=base touch, MC=force, MD=catch/drop,
+        # MF=play at 1st, MI=HBP, NH/NI=umpire reviews) are not ABS.
+        if review.get("reviewType") != "MJ":
+            continue
 
         is_overturned = review.get("isOverturned", False)
         challenge_team_id = review.get("challengeTeamId", 0)
