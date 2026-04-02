@@ -175,7 +175,12 @@ def extract_challenges_from_game(game_pk, game_data, umpire_name):
 
         pitch_data = challenged_pitch.get("pitchData", {})
         details = challenged_pitch.get("details", {})
-        count = challenged_pitch.get("count", {})
+        post_count = challenged_pitch.get("count", {})
+
+        # The count on the pitch event is AFTER the pitch was recorded.
+        # Calculate the pre-pitch count by reversing the pitch result.
+        post_balls = post_count.get("balls", 0)
+        post_strikes = post_count.get("strikes", 0)
 
         px = pitch_data.get("coordinates", {}).get("pX", 0)
         pz = pitch_data.get("coordinates", {}).get("pZ", 0)
@@ -195,22 +200,52 @@ def extract_challenges_from_game(game_pk, game_data, umpire_name):
         else:
             original_call = "Ball"
 
+        # Pre-pitch count: subtract the result of the challenged pitch.
+        # After an overturn, the final call is flipped. We use the original
+        # call to determine what was added to the count.
+        if original_call == "Called Strike":
+            # Strike was added (whether it stuck or got overturned, the
+            # post-count reflects the final state after the challenge)
+            if is_overturned:
+                # Overturned: strike→ball, so post-count has the ball added
+                pre_balls = max(0, post_balls - 1)
+                pre_strikes = post_strikes
+            else:
+                # Confirmed: strike stands
+                pre_balls = post_balls
+                pre_strikes = max(0, post_strikes - 1)
+        else:
+            # Original call was Ball
+            if is_overturned:
+                # Overturned: ball→strike, so post-count has the strike added
+                pre_balls = post_balls
+                pre_strikes = max(0, post_strikes - 1)
+            else:
+                # Confirmed: ball stands
+                pre_balls = max(0, post_balls - 1)
+                pre_strikes = post_strikes
+
         in_zone = is_in_zone(px, pz, sz_top, sz_bot)
         miss_dist = calc_miss_distance(px, pz, sz_top, sz_bot)
 
-        # Get catcher name from the review player field or fielder_2
+        # Get catcher from the fielding team's lineup (position C / fielder_2)
         catcher_name = ""
-        review_player = review.get("player", {})
-        if review_player:
-            catcher_name = review_player.get("fullName", "")
+        fielding_side = "home" if half == "top" else "away"
+        boxscore = game_data.get("liveData", {}).get("boxscore", {})
+        fielding_players = boxscore.get("teams", {}).get(fielding_side, {}).get("players", {})
+        for pid, pinfo in fielding_players.items():
+            pos = pinfo.get("position", {}).get("abbreviation", "")
+            if pos == "C":
+                catcher_name = pinfo.get("person", {}).get("fullName", "")
+                break
 
         challenges.append({
             "date": game_date,
             "gamePk": game_pk,
             "inning": inning,
-            "balls": count.get("balls", 0),
-            "strikes": count.get("strikes", 0),
-            "outs": count.get("outs", 0),
+            "balls": pre_balls,
+            "strikes": pre_strikes,
+            "outs": post_count.get("outs", 0),
             "batter": batter_name,
             "batterId": batter_id,
             "pitcher": pitcher_name,
