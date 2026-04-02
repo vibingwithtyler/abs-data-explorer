@@ -1,10 +1,12 @@
 const ZONE_HALF_WIDTH = 0.708; // 17 inches / 2 in feet
+const BALL_RADIUS_FT = 1.45 / 12; // baseball radius in feet
 
 export function calcMissDistance(px, pz, szTop, szBot) {
-  const dx = Math.max(0, Math.abs(px) - ZONE_HALF_WIDTH);
+  // Distance from ball edge to nearest zone edge (accounts for ball radius)
+  const dx = Math.max(0, Math.abs(px) - ZONE_HALF_WIDTH - BALL_RADIUS_FT);
   let dz = 0;
-  if (pz > szTop) dz = pz - szTop;
-  else if (pz < szBot) dz = szBot - pz;
+  if (pz > szTop + BALL_RADIUS_FT) dz = pz - szTop - BALL_RADIUS_FT;
+  else if (pz < szBot - BALL_RADIUS_FT) dz = szBot - BALL_RADIUS_FT - pz;
   const dist = Math.sqrt(dx * dx + dz * dz);
   return dist;
 }
@@ -14,7 +16,10 @@ export function feetToInches(ft) {
 }
 
 export function isInZone(px, pz, szTop, szBot) {
-  return Math.abs(px) <= ZONE_HALF_WIDTH && pz >= szBot && pz <= szTop;
+  // Ball-radius-adjusted: strike if any part of ball crosses any part of zone
+  return Math.abs(px) <= (ZONE_HALF_WIDTH + BALL_RADIUS_FT) &&
+         pz >= (szBot - BALL_RADIUS_FT) &&
+         pz <= (szTop + BALL_RADIUS_FT);
 }
 
 export function nearestZoneEdge(px, pz, szTop, szBot) {

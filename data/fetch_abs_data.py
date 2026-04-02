@@ -59,19 +59,20 @@ TEAM_FULL_NAMES = {
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def calc_miss_distance(px, pz, sz_top, sz_bot):
-    """Distance from pitch center to nearest zone edge, in feet."""
-    dx = max(0, abs(px) - ZONE_HALF_WIDTH)
-    if pz > sz_top:
-        dz = pz - sz_top
-    elif pz < sz_bot:
-        dz = sz_bot - pz
+    """Distance from ball edge to nearest zone edge, in feet.
+
+    Accounts for ball radius: a pitch is a strike if any part of the
+    ball crosses any part of the zone. So the effective zone for the
+    ball center extends by BALL_RADIUS_FT in every direction.
+    """
+    dx = max(0, abs(px) - ZONE_HALF_WIDTH - BALL_RADIUS_FT)
+    if pz > sz_top + BALL_RADIUS_FT:
+        dz = pz - sz_top - BALL_RADIUS_FT
+    elif pz < sz_bot - BALL_RADIUS_FT:
+        dz = sz_bot - BALL_RADIUS_FT - pz
     else:
         dz = 0
     return math.sqrt(dx * dx + dz * dz)
-
-
-def is_in_zone(px, pz, sz_top, sz_bot):
-    return abs(px) <= ZONE_HALF_WIDTH and sz_bot <= pz <= sz_top
 
 
 def fetch_json(url, max_retries=3):
@@ -225,8 +226,19 @@ def extract_challenges_from_game(game_pk, game_data, umpire_name):
                 pre_balls = max(0, post_balls - 1)
                 pre_strikes = post_strikes
 
-        in_zone = is_in_zone(px, pz, sz_top, sz_bot)
-        miss_dist = calc_miss_distance(px, pz, sz_top, sz_bot)
+        # Derive inZone from the ABS ruling (ground truth), not our zone math.
+        # Batters challenge Called Strikes: overturn → ABS says ball (not in zone)
+        # Fielders challenge Balls: overturn → ABS says strike (in zone)
+        if challenger_type == "Batter":
+            in_zone = not is_overturned  # confirmed = strike stands = in zone
+        else:
+            in_zone = is_overturned  # overturned = ABS says strike = in zone
+
+        # Miss distance for pitches ABS ruled as balls (outside zone)
+        if in_zone:
+            miss_dist = 0.0
+        else:
+            miss_dist = calc_miss_distance(px, pz, sz_top, sz_bot)
 
         # Get catcher from the fielding team's lineup (position C / fielder_2)
         catcher_name = ""
