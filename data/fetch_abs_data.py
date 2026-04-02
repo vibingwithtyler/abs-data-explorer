@@ -184,10 +184,13 @@ def extract_challenges_from_game(game_pk, game_data, umpire_name):
         velocity = pitch_data.get("startSpeed", 0)
         pitch_type_code = details.get("type", {}).get("code", "")
         pitch_type_desc = details.get("type", {}).get("description", "")
-        call_desc = details.get("call", {}).get("description", "")
 
-        # Determine original call
-        if "strike" in call_desc.lower():
+        # Determine original call from challenger type:
+        # Batters challenge Called Strikes (they want a Ball)
+        # Fielders challenge Balls (they want a Strike)
+        # The pitch event's call description may reflect the POST-review
+        # result, so we derive the original call from who challenged.
+        if challenger_type == "Batter":
             original_call = "Called Strike"
         else:
             original_call = "Ball"

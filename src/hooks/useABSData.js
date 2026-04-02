@@ -7,7 +7,10 @@ export default function useABSData() {
   const [isDemo, setIsDemo] = useState(false);
 
   useEffect(() => {
-    fetch(`${import.meta.env.BASE_URL}data/abs-challenges.json`)
+    // Fetch live data from GitHub repo (updated hourly by Actions)
+    const GITHUB_RAW = 'https://raw.githubusercontent.com/vibingwithtyler/abs-data-explorer/main/public/data/abs-challenges.json';
+
+    fetch(GITHUB_RAW)
       .then(r => {
         if (!r.ok) throw new Error('No data file');
         return r.json();
