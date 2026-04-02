@@ -77,16 +77,18 @@ export default function StrikeZone({ pitches = [], width = 380, height = 430, on
         const r = isHighlight ? 8 : isHover ? 7 : 5;
         const color = p.overturned ? COLORS.green : COLORS.red;
 
-        // For pitches outside the zone, nudge position so the circle edge
-        // doesn't overlap the zone boundary
+        // Use this pitch's individual zone (not the average) for nudging,
+        // since inZone was determined per-batter
         let drawPx = p.px;
         let drawPz = p.pz;
         if (!p.inZone) {
           const margin = r / ((width) / (VIEW_X_MAX - VIEW_X_MIN)); // radius in feet
+          const pEffTop = (p.zoneTop || 3.4) + BALL_RADIUS_FT;
+          const pEffBot = (p.zoneBot || 1.55) - BALL_RADIUS_FT;
           if (drawPx > effHalfW) drawPx = Math.max(drawPx, effHalfW + margin);
           else if (drawPx < -effHalfW) drawPx = Math.min(drawPx, -effHalfW - margin);
-          if (drawPz > effTop) drawPz = Math.max(drawPz, effTop + margin);
-          else if (drawPz < effBot) drawPz = Math.min(drawPz, effBot - margin);
+          if (drawPz > pEffTop) drawPz = Math.max(drawPz, pEffTop + margin);
+          else if (drawPz < pEffBot) drawPz = Math.min(drawPz, pEffBot - margin);
         }
         const pos = toSvg(drawPx, drawPz, width, height);
         return (
