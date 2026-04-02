@@ -7,7 +7,7 @@ export default function useABSData() {
   const [isDemo, setIsDemo] = useState(false);
 
   useEffect(() => {
-    fetch('/data/abs-challenges.json')
+    fetch(`${import.meta.env.BASE_URL}data/abs-challenges.json`)
       .then(r => {
         if (!r.ok) throw new Error('No data file');
         return r.json();
