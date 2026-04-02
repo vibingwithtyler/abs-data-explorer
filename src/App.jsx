@@ -653,9 +653,14 @@ export default function App() {
             <h1 style={{ fontSize: 22, fontWeight: 700, color: COLORS.text, letterSpacing: -0.5, margin: 0 }}>ABS Challenge Explorer</h1>
             <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 2 }}>MLB Automated Ball-Strike System — 2026 Season</p>
           </div>
-          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: COLORS.textMuted }}>
-            {filteredData.length} challenge{filteredData.length !== 1 ? 's' : ''}
-            {data?.lastUpdated && <span> | Updated {new Date(data.lastUpdated).toLocaleDateString()}</span>}
+          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: COLORS.textMuted, textAlign: 'right' }}>
+            <div>
+              {filteredData.length} challenge{filteredData.length !== 1 ? 's' : ''}
+              {data?.lastUpdated && <span> | Updated {new Date(data.lastUpdated).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</span>}
+            </div>
+            <div style={{ fontSize: 10, color: COLORS.textMuted, opacity: 0.6, marginTop: 2 }}>
+              Syncs hourly · 12 PM – 12 AM PT during season
+            </div>
           </div>
         </div>
 
