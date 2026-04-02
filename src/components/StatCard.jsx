@@ -1,17 +1,21 @@
 import React from 'react';
 import { COLORS } from '../utils/constants';
 
-export default function StatCard({ label, value, subtitle, color = COLORS.accent, icon: Icon }) {
+export default function StatCard({ label, value, subtitle, color = COLORS.accent, icon: Icon, onClick, active }) {
   return (
-    <div style={{
-      background: COLORS.bg3,
-      border: `1px solid ${COLORS.border}`,
-      borderRadius: 8,
-      padding: '16px 20px',
-      minWidth: 160,
-      flex: '1 1 160px',
-      position: 'relative',
-    }}>
+    <div
+      onClick={onClick}
+      style={{
+        background: active ? `${color}11` : COLORS.bg3,
+        border: `1px solid ${active ? color : COLORS.border}`,
+        borderRadius: 8,
+        padding: '16px 20px',
+        minWidth: 160,
+        flex: '1 1 160px',
+        position: 'relative',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'all 0.15s ease',
+      }}>
       {Icon && (
         <Icon size={16} style={{ position: 'absolute', top: 12, right: 12, color: COLORS.textMuted }} />
       )}

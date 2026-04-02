@@ -84,6 +84,8 @@ function Badge({ label, color }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function OverviewTab({ challenges, onPitchClick }) {
+  const [tableFilter, setTableFilter] = useState({ type: null, value: null, inverted: false });
+
   const stats = useMemo(() => {
     const total = challenges.length;
     const overturned = challenges.filter(c => c.overturned).length;
@@ -107,6 +109,7 @@ function OverviewTab({ challenges, onPitchClick }) {
     aggregateByField(challenges, 'pitchType').map(d => ({
       ...d,
       name: PITCH_TYPES[d.name] || d.name,
+      rawType: d.name,
     })).slice(0, 10),
     [challenges]
   );
@@ -131,67 +134,165 @@ function OverviewTab({ challenges, onPitchClick }) {
     };
   }, [challenges]);
 
+  // Build a reverse map: display name → raw pitchType code
+  const pitchNameToRaw = useMemo(() => {
+    const m = {};
+    Object.entries(PITCH_TYPES).forEach(([code, name]) => { m[name] = code; });
+    return m;
+  }, []);
+
+  // Apply the active table filter
+  const tableChallenges = useMemo(() => {
+    if (!tableFilter.type) return challenges;
+    let result;
+    const inv = tableFilter.inverted;
+    switch (tableFilter.type) {
+      case 'total':
+        return challenges;
+      case 'batterSuccess':
+        result = challenges.filter(c => c.challengerType === 'Batter' && (inv ? !c.overturned : c.overturned));
+        return result;
+      case 'fielderSuccess':
+        result = challenges.filter(c => c.challengerType === 'Fielder' && (inv ? !c.overturned : c.overturned));
+        return result;
+      case 'date':
+        result = challenges.filter(c => inv ? c.date !== tableFilter.value : c.date === tableFilter.value);
+        return result;
+      case 'pitchType': {
+        const raw = pitchNameToRaw[tableFilter.value] || tableFilter.value;
+        result = challenges.filter(c => inv ? c.pitchType !== raw : c.pitchType === raw);
+        return result;
+      }
+      case 'inning':
+        result = challenges.filter(c => inv ? String(c.inning) !== tableFilter.value : String(c.inning) === tableFilter.value);
+        return result;
+      default:
+        return challenges;
+    }
+  }, [challenges, tableFilter, pitchNameToRaw]);
+
+  const tableData = useMemo(() =>
+    tableChallenges.map(c => ({
+      ...c,
+      count: `${c.balls}-${c.strikes}`,
+      missInches: c.missDistanceInches != null ? `${c.missDistanceInches.toFixed(1)}"` : '—',
+    })),
+    [tableChallenges]
+  );
+
+  const logColumns = [
+    { key: 'date', label: 'Date' },
+    { key: 'team', label: 'Team' },
+    { key: 'inning', label: 'Inn' },
+    { key: 'count', label: 'Count' },
+    { key: 'batter', label: 'Batter' },
+    { key: 'pitcher', label: 'Pitcher' },
+    { key: 'challengerType', label: 'Challenger', render: v => <Badge label={v.toUpperCase()} color={v === 'Batter' ? COLORS.purple : COLORS.orange} /> },
+    { key: 'pitchName', label: 'Pitch' },
+    { key: 'velocity', label: 'Velo', render: v => v ? `${v}` : '—' },
+    { key: 'missInches', label: 'Miss Dist' },
+    { key: 'overturned', label: 'Result', render: (v) => <Badge label={v ? 'OVERTURNED' : 'CONFIRMED'} color={v ? COLORS.green : COLORS.red} /> },
+    { key: 'umpire', label: 'Umpire' },
+  ];
+
+  const handleCardClick = (type) => {
+    if (tableFilter.type === type) {
+      setTableFilter({ type: null, value: null, inverted: false });
+    } else {
+      setTableFilter({ type, value: null, inverted: false });
+    }
+  };
+
+  const handleChartClick = (type, value) => {
+    if (tableFilter.type === type && tableFilter.value === value && !tableFilter.inverted) {
+      setTableFilter({ type: null, value: null, inverted: false });
+    } else {
+      setTableFilter({ type, value, inverted: false });
+    }
+  };
+
+  const toggleInvert = () => {
+    setTableFilter(prev => ({ ...prev, inverted: !prev.inverted }));
+  };
+
+  const filterLabel = useMemo(() => {
+    if (!tableFilter.type) return null;
+    const inv = tableFilter.inverted;
+    switch (tableFilter.type) {
+      case 'total': return 'All Challenges';
+      case 'batterSuccess': return inv ? 'Batter Unsuccessful' : 'Batter Successful';
+      case 'fielderSuccess': return inv ? 'Fielder Unsuccessful' : 'Fielder Successful';
+      case 'date': return inv ? `Excluding ${tableFilter.value}` : `Date: ${tableFilter.value}`;
+      case 'pitchType': return inv ? `Excluding ${tableFilter.value}` : `Pitch: ${tableFilter.value}`;
+      case 'inning': return inv ? `Excluding Inning ${tableFilter.value}` : `Inning ${tableFilter.value}`;
+      default: return null;
+    }
+  }, [tableFilter]);
+
   return (
     <div style={{ animation: 'fadeIn 0.3s ease' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 24 }}>
-        <StatCard label="Total Challenges" value={stats.total} icon={Activity} color={COLORS.accent} />
+        <StatCard label="Total Challenges" value={stats.total} icon={Activity} color={COLORS.accent}
+          onClick={() => handleCardClick('total')} active={tableFilter.type === 'total'} />
         <StatCard label="Overturn Rate" value={`${stats.overturnRate}%`} icon={TrendingUp} color={COLORS.green} />
         <StatCard label="Avg Miss Distance" value={`${stats.avgMiss}"`} icon={Target} color={COLORS.orange} />
-        <StatCard label="Batter Success" value={`${stats.batterSuccess}%`} icon={Users} color={COLORS.purple} />
-        <StatCard label="Fielder Success" value={`${stats.fielderSuccess}%`} icon={Shield} color={COLORS.red} />
+        <StatCard label="Batter Success" value={`${stats.batterSuccess}%`} icon={Users} color={COLORS.purple}
+          onClick={() => handleCardClick('batterSuccess')} active={tableFilter.type === 'batterSuccess'} />
+        <StatCard label="Fielder Success" value={`${stats.fielderSuccess}%`} icon={Shield} color={COLORS.red}
+          onClick={() => handleCardClick('fielderSuccess')} active={tableFilter.type === 'fielderSuccess'} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: 24 }}>
         <div style={chartCardStyle}>
           <div style={chartTitleStyle}>Challenge Locations</div>
-          <StrikeZone pitches={challenges} width={360} height={420} onPitchClick={onPitchClick} />
+          <StrikeZone pitches={tableChallenges} width={360} height={420} onPitchClick={onPitchClick} />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: 16 }}>
           <div style={chartCardStyle}>
-            <div style={chartTitleStyle}>Daily Trend</div>
+            <div style={chartTitleStyle}>Daily Trend <span style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 400 }}>click a bar</span></div>
             <ResponsiveContainer width="100%" height={220}>
-              <ComposedChart data={dailyData}>
+              <ComposedChart data={dailyData} onClick={(e) => { if (e?.activeLabel) handleChartClick('date', e.activeLabel); }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
                 <XAxis dataKey="date" stroke={COLORS.border} tick={{ fill: COLORS.textMuted, fontSize: 10 }} tickFormatter={v => v.slice(5)} />
                 <YAxis yAxisId="left" stroke={COLORS.border} tick={{ fill: COLORS.textMuted, fontSize: 10 }} />
                 <YAxis yAxisId="right" orientation="right" stroke={COLORS.border} tick={{ fill: COLORS.textMuted, fontSize: 10 }} domain={[0, 100]} />
                 <Tooltip {...tooltipStyle} />
-                <Bar yAxisId="left" dataKey="total" fill={COLORS.accent} opacity={0.6} radius={[2, 2, 0, 0]} name="Challenges" />
-                <Bar yAxisId="left" dataKey="overturned" fill={COLORS.green} radius={[2, 2, 0, 0]} name="Overturned" />
+                <Bar yAxisId="left" dataKey="total" fill={COLORS.accent} opacity={0.6} radius={[2, 2, 0, 0]} name="Challenges" cursor="pointer" />
+                <Bar yAxisId="left" dataKey="overturned" fill={COLORS.green} radius={[2, 2, 0, 0]} name="Overturned" cursor="pointer" />
                 <Line yAxisId="right" dataKey="overturnRate" stroke={COLORS.orange} strokeWidth={2} dot={false} name="Overturn %" />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
 
           <div style={chartCardStyle}>
-            <div style={chartTitleStyle}>By Pitch Type</div>
+            <div style={chartTitleStyle}>By Pitch Type <span style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 400 }}>click a bar</span></div>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={pitchTypeData} layout="vertical">
+              <BarChart data={pitchTypeData} layout="vertical" onClick={(e) => { if (e?.activeLabel) handleChartClick('pitchType', e.activeLabel); }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#21262d" horizontal={false} />
                 <XAxis type="number" stroke={COLORS.border} tick={{ fill: COLORS.textMuted, fontSize: 10 }} />
                 <YAxis type="category" dataKey="name" stroke={COLORS.border} tick={{ fill: COLORS.textMuted, fontSize: 9 }} width={100} />
                 <Tooltip {...tooltipStyle} />
-                <Bar dataKey="total" fill={COLORS.accent} opacity={0.6} radius={[0, 2, 2, 0]} name="Total" />
-                <Bar dataKey="overturned" fill={COLORS.green} radius={[0, 2, 2, 0]} name="Overturned" />
+                <Bar dataKey="total" fill={COLORS.accent} opacity={0.6} radius={[0, 2, 2, 0]} name="Total" cursor="pointer" />
+                <Bar dataKey="overturned" fill={COLORS.green} radius={[0, 2, 2, 0]} name="Overturned" cursor="pointer" />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
           <div style={chartCardStyle}>
-            <div style={chartTitleStyle}>By Inning</div>
+            <div style={chartTitleStyle}>By Inning <span style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 400 }}>click a bar</span></div>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={inningData}>
+              <BarChart data={inningData} onClick={(e) => { if (e?.activeLabel) handleChartClick('inning', e.activeLabel); }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
                 <XAxis dataKey="inning" stroke={COLORS.border} tick={{ fill: COLORS.textMuted, fontSize: 10 }} />
                 <YAxis stroke={COLORS.border} tick={{ fill: COLORS.textMuted, fontSize: 10 }} />
                 <Tooltip {...tooltipStyle} />
-                <Bar dataKey="total" name="Total" radius={[2, 2, 0, 0]}>
+                <Bar dataKey="total" name="Total" radius={[2, 2, 0, 0]} cursor="pointer">
                   {inningData.map((entry, idx) => (
                     <Cell key={idx} fill={parseInt(entry.inning) >= 7 ? COLORS.purple : COLORS.accent} opacity={0.7} />
                   ))}
                 </Bar>
-                <Bar dataKey="overturned" fill={COLORS.green} radius={[2, 2, 0, 0]} name="Overturned" />
+                <Bar dataKey="overturned" fill={COLORS.green} radius={[2, 2, 0, 0]} name="Overturned" cursor="pointer" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -220,6 +321,43 @@ function OverviewTab({ challenges, onPitchClick }) {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Filter indicator + invert toggle */}
+      <div style={{ marginTop: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={chartTitleStyle}>
+          Pitch Log {filterLabel ? `— ${filterLabel}` : ''} ({tableChallenges.length})
+        </div>
+        {tableFilter.type && tableFilter.type !== 'total' && (
+          <button
+            onClick={toggleInvert}
+            style={{
+              padding: '4px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+              fontFamily: 'JetBrains Mono, monospace', cursor: 'pointer',
+              border: `1px solid ${tableFilter.inverted ? COLORS.orange : COLORS.border}`,
+              background: tableFilter.inverted ? `${COLORS.orange}22` : COLORS.bg3,
+              color: tableFilter.inverted ? COLORS.orange : COLORS.textMuted,
+            }}
+          >
+            Invert
+          </button>
+        )}
+        {tableFilter.type && (
+          <button
+            onClick={() => setTableFilter({ type: null, value: null, inverted: false })}
+            style={{
+              padding: '4px 12px', borderRadius: 4, fontSize: 11, fontWeight: 500,
+              fontFamily: 'JetBrains Mono, monospace', cursor: 'pointer',
+              border: `1px solid ${COLORS.border}`, background: COLORS.bg3, color: COLORS.textMuted,
+            }}
+          >
+            Clear Filter
+          </button>
+        )}
+      </div>
+
+      <div style={{ ...chartCardStyle, marginTop: 8 }}>
+        <DataTable columns={logColumns} data={tableData} onRowClick={onPitchClick} defaultSort={{ key: 'date', dir: 'desc' }} />
       </div>
     </div>
   );
@@ -541,13 +679,60 @@ function UmpiresTab({ challenges }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function PitchLogTab({ challenges, onPitchClick }) {
+  const [logFilters, setLogFilters] = useState({
+    date: 'All', inning: 'All', batter: 'All', pitcher: 'All',
+    challengerType: 'All', pitchType: 'All', result: 'All',
+    umpire: 'All', inZone: 'All', team: 'All',
+    veloMin: '', veloMax: '', missMin: '', missMax: '',
+  });
+
+  // Extract unique values for each filter dropdown
+  const options = useMemo(() => {
+    const unique = (field) => [...new Set(challenges.map(c => c[field]).filter(Boolean))].sort();
+    return {
+      dates: unique('date'),
+      innings: [...new Set(challenges.map(c => c.inning))].sort((a, b) => a - b),
+      batters: unique('batter'),
+      pitchers: unique('pitcher'),
+      pitchTypes: unique('pitchType').map(t => ({ value: t, label: PITCH_TYPES[t] || t })),
+      umpires: unique('umpire'),
+      teams: unique('team'),
+    };
+  }, [challenges]);
+
+  const filteredChallenges = useMemo(() => {
+    return challenges.filter(c => {
+      if (logFilters.date !== 'All' && c.date !== logFilters.date) return false;
+      if (logFilters.inning !== 'All' && String(c.inning) !== logFilters.inning) return false;
+      if (logFilters.batter !== 'All' && c.batter !== logFilters.batter) return false;
+      if (logFilters.pitcher !== 'All' && c.pitcher !== logFilters.pitcher) return false;
+      if (logFilters.challengerType !== 'All' && c.challengerType !== logFilters.challengerType) return false;
+      if (logFilters.pitchType !== 'All' && c.pitchType !== logFilters.pitchType) return false;
+      if (logFilters.result !== 'All') {
+        if (logFilters.result === 'Overturned' && !c.overturned) return false;
+        if (logFilters.result === 'Confirmed' && c.overturned) return false;
+      }
+      if (logFilters.umpire !== 'All' && c.umpire !== logFilters.umpire) return false;
+      if (logFilters.inZone !== 'All') {
+        if (logFilters.inZone === 'Yes' && !c.inZone) return false;
+        if (logFilters.inZone === 'No' && c.inZone) return false;
+      }
+      if (logFilters.team !== 'All' && c.team !== logFilters.team) return false;
+      if (logFilters.veloMin && c.velocity < Number(logFilters.veloMin)) return false;
+      if (logFilters.veloMax && c.velocity > Number(logFilters.veloMax)) return false;
+      if (logFilters.missMin && (c.missDistanceInches || 0) < Number(logFilters.missMin)) return false;
+      if (logFilters.missMax && (c.missDistanceInches || 0) > Number(logFilters.missMax)) return false;
+      return true;
+    });
+  }, [challenges, logFilters]);
+
   const tableData = useMemo(() =>
-    challenges.map(c => ({
+    filteredChallenges.map(c => ({
       ...c,
       count: `${c.balls}-${c.strikes}`,
       missInches: c.missDistanceInches != null ? `${c.missDistanceInches.toFixed(1)}"` : '—',
     })),
-    [challenges]
+    [filteredChallenges]
   );
 
   const columns = [
@@ -565,10 +750,145 @@ function PitchLogTab({ challenges, onPitchClick }) {
     { key: 'umpire', label: 'Umpire' },
   ];
 
+  const setF = (key, val) => setLogFilters(prev => ({ ...prev, [key]: val }));
+
+  const activeFilterCount = Object.entries(logFilters).filter(([k, v]) => {
+    if (['veloMin', 'veloMax', 'missMin', 'missMax'].includes(k)) return v !== '';
+    return v !== 'All';
+  }).length;
+
+  const selectStyle = {
+    padding: '5px 8px', borderRadius: 5, border: `1px solid ${COLORS.border}`,
+    background: COLORS.bg3, color: COLORS.text, fontSize: 11, fontFamily: 'Inter, sans-serif',
+    cursor: 'pointer', minWidth: 0,
+  };
+  const inputStyle = {
+    ...selectStyle, width: 60, cursor: 'text',
+  };
+  const labelStyle = {
+    fontSize: 9, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em',
+    marginBottom: 2, fontFamily: 'JetBrains Mono, monospace',
+  };
+
   return (
     <div style={{ animation: 'fadeIn 0.3s ease' }}>
+      {/* Filter panel */}
+      <div style={{
+        ...chartCardStyle, marginBottom: 16, padding: '16px 20px',
+        display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end',
+      }}>
+        <div>
+          <div style={labelStyle}>Date</div>
+          <select value={logFilters.date} onChange={e => setF('date', e.target.value)} style={selectStyle}>
+            <option value="All">All</option>
+            {options.dates.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={labelStyle}>Team</div>
+          <select value={logFilters.team} onChange={e => setF('team', e.target.value)} style={selectStyle}>
+            <option value="All">All</option>
+            {options.teams.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={labelStyle}>Inning</div>
+          <select value={logFilters.inning} onChange={e => setF('inning', e.target.value)} style={selectStyle}>
+            <option value="All">All</option>
+            {options.innings.map(n => <option key={n} value={String(n)}>{n}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={labelStyle}>Batter</div>
+          <select value={logFilters.batter} onChange={e => setF('batter', e.target.value)} style={selectStyle}>
+            <option value="All">All</option>
+            {options.batters.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={labelStyle}>Pitcher</div>
+          <select value={logFilters.pitcher} onChange={e => setF('pitcher', e.target.value)} style={selectStyle}>
+            <option value="All">All</option>
+            {options.pitchers.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={labelStyle}>Challenger</div>
+          <select value={logFilters.challengerType} onChange={e => setF('challengerType', e.target.value)} style={selectStyle}>
+            <option value="All">All</option>
+            <option value="Batter">Batter</option>
+            <option value="Fielder">Fielder</option>
+          </select>
+        </div>
+        <div>
+          <div style={labelStyle}>Pitch Type</div>
+          <select value={logFilters.pitchType} onChange={e => setF('pitchType', e.target.value)} style={selectStyle}>
+            <option value="All">All</option>
+            {options.pitchTypes.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={labelStyle}>Result</div>
+          <select value={logFilters.result} onChange={e => setF('result', e.target.value)} style={selectStyle}>
+            <option value="All">All</option>
+            <option value="Overturned">Overturned</option>
+            <option value="Confirmed">Confirmed</option>
+          </select>
+        </div>
+        <div>
+          <div style={labelStyle}>Umpire</div>
+          <select value={logFilters.umpire} onChange={e => setF('umpire', e.target.value)} style={selectStyle}>
+            <option value="All">All</option>
+            {options.umpires.map(u => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={labelStyle}>In Zone</div>
+          <select value={logFilters.inZone} onChange={e => setF('inZone', e.target.value)} style={selectStyle}>
+            <option value="All">All</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+          </select>
+        </div>
+        <div>
+          <div style={labelStyle}>Velo Min</div>
+          <input type="number" value={logFilters.veloMin} onChange={e => setF('veloMin', e.target.value)} placeholder="—" style={inputStyle} />
+        </div>
+        <div>
+          <div style={labelStyle}>Velo Max</div>
+          <input type="number" value={logFilters.veloMax} onChange={e => setF('veloMax', e.target.value)} placeholder="—" style={inputStyle} />
+        </div>
+        <div>
+          <div style={labelStyle}>Miss Min"</div>
+          <input type="number" value={logFilters.missMin} onChange={e => setF('missMin', e.target.value)} placeholder="—" style={inputStyle} step="0.1" />
+        </div>
+        <div>
+          <div style={labelStyle}>Miss Max"</div>
+          <input type="number" value={logFilters.missMax} onChange={e => setF('missMax', e.target.value)} placeholder="—" style={inputStyle} step="0.1" />
+        </div>
+        {activeFilterCount > 0 && (
+          <button
+            onClick={() => setLogFilters({
+              date: 'All', inning: 'All', batter: 'All', pitcher: 'All',
+              challengerType: 'All', pitchType: 'All', result: 'All',
+              umpire: 'All', inZone: 'All', team: 'All',
+              veloMin: '', veloMax: '', missMin: '', missMax: '',
+            })}
+            style={{
+              padding: '5px 14px', borderRadius: 5, fontSize: 11, fontWeight: 600,
+              fontFamily: 'JetBrains Mono, monospace', cursor: 'pointer',
+              border: `1px solid ${COLORS.red}44`, background: `${COLORS.red}11`, color: COLORS.red,
+            }}
+          >
+            Clear All ({activeFilterCount})
+          </button>
+        )}
+      </div>
+
       <div style={chartCardStyle}>
-        <div style={chartTitleStyle}>All Challenges ({challenges.length})</div>
+        <div style={chartTitleStyle}>
+          {activeFilterCount > 0 ? `Filtered Challenges (${filteredChallenges.length} of ${challenges.length})` : `All Challenges (${challenges.length})`}
+        </div>
         <DataTable columns={columns} data={tableData} onRowClick={onPitchClick} defaultSort={{ key: 'date', dir: 'desc' }} />
       </div>
     </div>
