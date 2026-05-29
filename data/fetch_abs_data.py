@@ -124,163 +124,159 @@ def extract_challenges_from_game(game_pk, game_data, umpire_name):
     away_abbr = TEAM_NAMES.get(away_team_id, "UNK")
 
     for play in all_plays:
-        # Check if this at-bat has a review
-        review = play.get("reviewDetails")
-        if not review:
-            continue
-
-        # Only include ABS pitch challenges (reviewType "MJ").
-        # Other types (MA=tag, MB=base touch, MC=force, MD=catch/drop,
-        # MF=play at 1st, MI=HBP, NH/NI=umpire reviews) are not ABS.
-        if review.get("reviewType") != "MJ":
-            continue
-
-        is_overturned = review.get("isOverturned", False)
-        challenge_team_id = review.get("challengeTeamId", 0)
-
         about = play.get("about", {})
-        inning = about.get("inning", 0)
-        half = about.get("halfInning", "top")
-
         matchup = play.get("matchup", {})
-        batter_name = matchup.get("batter", {}).get("fullName", "Unknown")
-        batter_id = matchup.get("batter", {}).get("id", 0)
-        pitcher_name = matchup.get("pitcher", {}).get("fullName", "Unknown")
-        pitcher_id = matchup.get("pitcher", {}).get("id", 0)
-
-        # Determine challenger type from the review
-        # If challengeTeamId matches the batting team, it's a batter/catcher challenge
-        batting_team_id = away_team_id if half == "top" else home_team_id
-        fielding_team_id = home_team_id if half == "top" else away_team_id
-
-        if challenge_team_id == fielding_team_id:
-            challenger_type = "Fielder"
-        else:
-            challenger_type = "Batter"
-
-        batting_abbr = away_abbr if half == "top" else home_abbr
-        fielding_abbr = home_abbr if half == "top" else away_abbr
-
-        # Find the challenged pitch — it's the last pitch in the play events
-        # that was a called ball or called strike before the review
         play_events = play.get("playEvents", [])
-        challenged_pitch = None
-        for event in reversed(play_events):
-            if event.get("isPitch", False):
-                challenged_pitch = event
-                break
 
-        if not challenged_pitch:
-            continue
-
-        pitch_data = challenged_pitch.get("pitchData", {})
-        details = challenged_pitch.get("details", {})
-        post_count = challenged_pitch.get("count", {})
-
-        # The count on the pitch event is AFTER the pitch was recorded.
-        # Calculate the pre-pitch count by reversing the pitch result.
-        post_balls = post_count.get("balls", 0)
-        post_strikes = post_count.get("strikes", 0)
-
-        px = pitch_data.get("coordinates", {}).get("pX", 0)
-        pz = pitch_data.get("coordinates", {}).get("pZ", 0)
-        sz_top = pitch_data.get("strikeZoneTop", 3.4)
-        sz_bot = pitch_data.get("strikeZoneBottom", 1.55)
-        velocity = pitch_data.get("startSpeed", 0)
-        pitch_type_code = details.get("type", {}).get("code", "")
-        pitch_type_desc = details.get("type", {}).get("description", "")
-
-        # Determine original call from challenger type:
-        # Batters challenge Called Strikes (they want a Ball)
-        # Fielders challenge Balls (they want a Strike)
-        # The pitch event's call description may reflect the POST-review
-        # result, so we derive the original call from who challenged.
-        if challenger_type == "Batter":
-            original_call = "Called Strike"
+        # Collect (review, challenged_pitch) pairs for all MJ challenges in this play.
+        # The MLB API places reviewDetails either at the play level or directly on the
+        # pitch event. Play-level: find the last pitch as the challenged pitch.
+        # Event-level: the review sits on the pitch event itself.
+        candidates = []
+        top_review = play.get("reviewDetails")
+        if top_review and top_review.get("reviewType") == "MJ":
+            last_pitch = next((e for e in reversed(play_events) if e.get("isPitch")), None)
+            if last_pitch:
+                candidates.append((top_review, last_pitch))
         else:
-            original_call = "Ball"
+            for event in play_events:
+                ev_review = event.get("reviewDetails")
+                if ev_review and ev_review.get("reviewType") == "MJ":
+                    candidates.append((ev_review, event))
 
-        # Pre-pitch count: subtract the result of the challenged pitch.
-        # After an overturn, the final call is flipped. We use the original
-        # call to determine what was added to the count.
-        if original_call == "Called Strike":
-            # Strike was added (whether it stuck or got overturned, the
-            # post-count reflects the final state after the challenge)
-            if is_overturned:
-                # Overturned: strike→ball, so post-count has the ball added
-                pre_balls = max(0, post_balls - 1)
-                pre_strikes = post_strikes
+        for review, challenged_pitch in candidates:
+            is_overturned = review.get("isOverturned", False)
+            challenge_team_id = review.get("challengeTeamId", 0)
+
+            inning = about.get("inning", 0)
+            half = about.get("halfInning", "top")
+
+            batter_name = matchup.get("batter", {}).get("fullName", "Unknown")
+            batter_id = matchup.get("batter", {}).get("id", 0)
+            pitcher_name = matchup.get("pitcher", {}).get("fullName", "Unknown")
+            pitcher_id = matchup.get("pitcher", {}).get("id", 0)
+
+            # Determine challenger type from the review
+            # If challengeTeamId matches the batting team, it's a batter/catcher challenge
+            batting_team_id = away_team_id if half == "top" else home_team_id
+            fielding_team_id = home_team_id if half == "top" else away_team_id
+
+            if challenge_team_id == fielding_team_id:
+                challenger_type = "Fielder"
             else:
-                # Confirmed: strike stands
-                pre_balls = post_balls
-                pre_strikes = max(0, post_strikes - 1)
-        else:
-            # Original call was Ball
-            if is_overturned:
-                # Overturned: ball→strike, so post-count has the strike added
-                pre_balls = post_balls
-                pre_strikes = max(0, post_strikes - 1)
+                challenger_type = "Batter"
+
+            batting_abbr = away_abbr if half == "top" else home_abbr
+            fielding_abbr = home_abbr if half == "top" else away_abbr
+
+            pitch_data = challenged_pitch.get("pitchData", {})
+            details = challenged_pitch.get("details", {})
+            post_count = challenged_pitch.get("count", {})
+
+            # The count on the pitch event is AFTER the pitch was recorded.
+            # Calculate the pre-pitch count by reversing the pitch result.
+            post_balls = post_count.get("balls", 0)
+            post_strikes = post_count.get("strikes", 0)
+
+            px = pitch_data.get("coordinates", {}).get("pX", 0)
+            pz = pitch_data.get("coordinates", {}).get("pZ", 0)
+            sz_top = pitch_data.get("strikeZoneTop", 3.4)
+            sz_bot = pitch_data.get("strikeZoneBottom", 1.55)
+            velocity = pitch_data.get("startSpeed", 0)
+            pitch_type_code = details.get("type", {}).get("code", "")
+            pitch_type_desc = details.get("type", {}).get("description", "")
+
+            # Determine original call from challenger type:
+            # Batters challenge Called Strikes (they want a Ball)
+            # Fielders challenge Balls (they want a Strike)
+            # The pitch event's call description may reflect the POST-review
+            # result, so we derive the original call from who challenged.
+            if challenger_type == "Batter":
+                original_call = "Called Strike"
             else:
-                # Confirmed: ball stands
-                pre_balls = max(0, post_balls - 1)
-                pre_strikes = post_strikes
+                original_call = "Ball"
 
-        # Derive inZone from the ABS ruling (ground truth), not our zone math.
-        # Batters challenge Called Strikes: overturn → ABS says ball (not in zone)
-        # Fielders challenge Balls: overturn → ABS says strike (in zone)
-        if challenger_type == "Batter":
-            in_zone = not is_overturned  # confirmed = strike stands = in zone
-        else:
-            in_zone = is_overturned  # overturned = ABS says strike = in zone
+            # Pre-pitch count: subtract the result of the challenged pitch.
+            # After an overturn, the final call is flipped. We use the original
+            # call to determine what was added to the count.
+            if original_call == "Called Strike":
+                # Strike was added (whether it stuck or got overturned, the
+                # post-count reflects the final state after the challenge)
+                if is_overturned:
+                    # Overturned: strike→ball, so post-count has the ball added
+                    pre_balls = max(0, post_balls - 1)
+                    pre_strikes = post_strikes
+                else:
+                    # Confirmed: strike stands
+                    pre_balls = post_balls
+                    pre_strikes = max(0, post_strikes - 1)
+            else:
+                # Original call was Ball
+                if is_overturned:
+                    # Overturned: ball→strike, so post-count has the strike added
+                    pre_balls = post_balls
+                    pre_strikes = max(0, post_strikes - 1)
+                else:
+                    # Confirmed: ball stands
+                    pre_balls = max(0, post_balls - 1)
+                    pre_strikes = post_strikes
 
-        # Miss distance for pitches ABS ruled as balls (outside zone)
-        if in_zone:
-            miss_dist = 0.0
-        else:
-            miss_dist = calc_miss_distance(px, pz, sz_top, sz_bot)
+            # Derive inZone from the ABS ruling (ground truth), not our zone math.
+            # Batters challenge Called Strikes: overturn → ABS says ball (not in zone)
+            # Fielders challenge Balls: overturn → ABS says strike (in zone)
+            if challenger_type == "Batter":
+                in_zone = not is_overturned  # confirmed = strike stands = in zone
+            else:
+                in_zone = is_overturned  # overturned = ABS says strike = in zone
 
-        # Get catcher from the fielding team's lineup (position C / fielder_2)
-        catcher_name = ""
-        fielding_side = "home" if half == "top" else "away"
-        boxscore = game_data.get("liveData", {}).get("boxscore", {})
-        fielding_players = boxscore.get("teams", {}).get(fielding_side, {}).get("players", {})
-        for pid, pinfo in fielding_players.items():
-            pos = pinfo.get("position", {}).get("abbreviation", "")
-            if pos == "C":
-                catcher_name = pinfo.get("person", {}).get("fullName", "")
-                break
+            # Miss distance for pitches ABS ruled as balls (outside zone)
+            if in_zone:
+                miss_dist = 0.0
+            else:
+                miss_dist = calc_miss_distance(px, pz, sz_top, sz_bot)
 
-        challenges.append({
-            "date": game_date,
-            "gamePk": game_pk,
-            "inning": inning,
-            "balls": pre_balls,
-            "strikes": pre_strikes,
-            "outs": post_count.get("outs", 0),
-            "batter": batter_name,
-            "batterId": batter_id,
-            "pitcher": pitcher_name,
-            "pitcherId": pitcher_id,
-            "catcher": catcher_name,
-            "team": batting_abbr,
-            "teamName": TEAM_FULL_NAMES.get(batting_abbr, batting_abbr),
-            "opponent": fielding_abbr,
-            "umpire": umpire_name,
-            "challengerType": challenger_type,
-            "pitchType": pitch_type_code,
-            "pitchName": pitch_type_desc,
-            "velocity": round(velocity, 1) if velocity else 0,
-            "px": round(px, 3),
-            "pz": round(pz, 3),
-            "zoneTop": round(sz_top, 3),
-            "zoneBot": round(sz_bot, 3),
-            "inZone": in_zone,
-            "missDistance": round(miss_dist, 4),
-            "missDistanceInches": round(miss_dist * 12, 2),
-            "originalCall": original_call,
-            "overturned": is_overturned,
-            "result": "Overturned" if is_overturned else "Confirmed",
-        })
+            # Get catcher from the fielding team's lineup (position C / fielder_2)
+            catcher_name = ""
+            fielding_side = "home" if half == "top" else "away"
+            boxscore = game_data.get("liveData", {}).get("boxscore", {})
+            fielding_players = boxscore.get("teams", {}).get(fielding_side, {}).get("players", {})
+            for pid, pinfo in fielding_players.items():
+                pos = pinfo.get("position", {}).get("abbreviation", "")
+                if pos == "C":
+                    catcher_name = pinfo.get("person", {}).get("fullName", "")
+                    break
+
+            challenges.append({
+                "date": game_date,
+                "gamePk": game_pk,
+                "inning": inning,
+                "balls": pre_balls,
+                "strikes": pre_strikes,
+                "outs": post_count.get("outs", 0),
+                "batter": batter_name,
+                "batterId": batter_id,
+                "pitcher": pitcher_name,
+                "pitcherId": pitcher_id,
+                "catcher": catcher_name,
+                "team": batting_abbr,
+                "teamName": TEAM_FULL_NAMES.get(batting_abbr, batting_abbr),
+                "opponent": fielding_abbr,
+                "umpire": umpire_name,
+                "challengerType": challenger_type,
+                "pitchType": pitch_type_code,
+                "pitchName": pitch_type_desc,
+                "velocity": round(velocity, 1) if velocity else 0,
+                "px": round(px, 3),
+                "pz": round(pz, 3),
+                "zoneTop": round(sz_top, 3),
+                "zoneBot": round(sz_bot, 3),
+                "inZone": in_zone,
+                "missDistance": round(miss_dist, 4),
+                "missDistanceInches": round(miss_dist * 12, 2),
+                "originalCall": original_call,
+                "overturned": is_overturned,
+                "result": "Overturned" if is_overturned else "Confirmed",
+            })
 
     return challenges
 
